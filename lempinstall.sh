@@ -128,41 +128,7 @@ EOF
 
 #Install MariaDB (MySQL) and set a strong root password
 
-apt-get install -y mariadb-server;
-
-#Secure your MariaDB installation
-
-MYSQL_ROOT_PASSWORD=$(date +%s|sha256sum|base64|head -c 36) #openssl rand -hex >
-WP_PASSWORD=$(date +%s+%m|sha256sum|base64|head -c 16) #openssl rand -hex 12
-WPDB=$newdomain
-WPUSER=$newdomain
-
-mariadb -uroot <<MYSQL_SCRIPT
-UPDATE mysql.user SET Password=PASSWORD('$MYSQL_ROOT_PASSWORD') WHERE User='root';
-DELETE FROM mysql.user WHERE User='';
-DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
-DROP DATABASE IF EXISTS test;
-DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
-FLUSH PRIVILEGES;
-MYSQL_SCRIPT
-
-echo $MYSQL_ROOT_PASSWORD
-echo $WP_PASSWORD
-
-
-#We will install phpMyAdmin using Composer as Ubuntu packages are no longer being maintained.
-mkdir -pv /var/www/
-cd /var/www
-composer create-project phpmyadmin/phpmyadmin
-cp /var/www/phpmyadmin/config.sample.inc.php /var/www/phpmyadmin/config.inc.php
-mysql -u root -pYOUR_ROOT_PASSWORD < /var/www/phpmyadmin/sql/create_tables.sql
-sed -i "s/\$cfg\['blowfish_secret'\] = '';.*/\$cfg\['blowfish_secret'\] = '$(uuidgen)';/" /var/www/phpmyadmin/config.inc.php
-mkdir -pv /var/www/phpmyadmin/tmp; chown www-data:www-data /var/www/phpmyadmin/tmp;
-
-#Symlink phpMyAdmin, create logs dir and set permissions and ownership on /var/www
-ln -s /var/www/phpmyadmin/ /var/www/html/phpmyadmin;  mkdir -pv /var/www/logs;  chown www-data:www-data /var/www/html; chown www-data:www-data /var/www/logs; chown www-data:www-data /var/www; chmod -R g+rw /var/www;
-
-
+apt-get install -y mariadb-client;
 
 #Create Nginx virtual host config
 
@@ -298,49 +264,6 @@ systemctl restart php7.4-fpm; systemctl restart nginx;
 
 echo 'LEMP Stack has been Installed \nNow downloding latest wordpress'
 sleep 3
-
-cd~
-wget https://wordpress.org/latest.tar.gz
-tar -xzvf latest.tar.gz
-rm latest.tar.gz
-cd wordpress
-mv * /$rootPath
-
-
-
-
-echo "Downloaded latest Wordpress. \n Creating new database for $newdomain"
-sleep 2
-
-db="${newdomain//.}"
-
-mariadb -uroot <<MYSQL_SCRIPT
-CREATE DATABASE db_$db DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;
-CREATE USER 'user$db'@'localhost' IDENTIFIED BY '$WP_PASSWORD';
-GRANT ALL PRIVILEGES ON db_$db.* TO 'user$db'@'localhost' WITH GRANT OPTION;
-FLUSH PRIVILEGES;
-MYSQL_SCRIPT
-
-#copy the password to the root directory
-
-echo "Root Password is $MYSQL_ROOT_PASSWORD 
-Wordpress Username is user$db
-Wordpress Database Name is db_$db
-Wordpress Password is  $WP_PASSWORD" > ~/passwords_$newdomain.txt
-
-cd /$rootPath
-#create wp config
-cp wp-config-sample.php wp-config.php
-sed -i "s/^.*DB_NAME.*$/define('DB_NAME', 'db_${db}');/" wp-config.php
-sed -i "s/^.*DB_USER.*$/define('DB_USER', 'user${db}');/" wp-config.php
-sed -i "s/^.*DB_PASSWORD.*$/define('DB_PASSWORD', '${WP_PASSWORD}');/" wp-config.php
-
-
-apt-get install ed -y
-
-SALT=$(curl -L https://api.wordpress.org/secret-key/1.1/salt/)
-STRING=$(date +%s+%m|sha256sum|base64|head -c 16)
-printf '%s\n' "g/$STRING/d" a "$SALT" . w | ed -s wp-config.php
 
 
 #Set up logrotate for our Nginx logs
